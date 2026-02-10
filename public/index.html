@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QuizMe — Learn from your code</title>
+  <meta name="description" content="Daily programming quizzes generated from your own codebase with spaced repetition">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Loading state -->
+    <div v-if="loading" class="loading-screen">
+      <div class="loader"></div>
+      <p>Loading QuizMe...</p>
+    </div>
+
+    <!-- Main app -->
+    <div v-else class="app-container">
+      <!-- Navigation -->
+      <nav class="navbar" v-if="view !== 'setup'">
+        <div class="nav-brand" @click="navigate('dashboard')">
+          <span class="brand-icon">⚡</span>
+          <span class="brand-text">QuizMe</span>
+        </div>
+        <div class="nav-links">
+          <button :class="['nav-btn', {active: view === 'dashboard'}]" @click="navigate('dashboard')">Dashboard</button>
+          <button :class="['nav-btn', {active: view === 'scan'}]" @click="navigate('scan')">Scan Project</button>
+          <button :class="['nav-btn', {active: view === 'stats'}]" @click="navigate('stats')">Stats</button>
+        </div>
+        <div class="nav-streak" v-if="status.streak > 0">
+          🔥 {{status.streak}} day streak
+        </div>
+      </nav>
+
+      <!-- SETUP VIEW — API Key Input -->
+      <div v-if="view === 'setup'" class="view-setup">
+        <div class="setup-card">
+          <div class="setup-icon">⚡</div>
+          <h1>Welcome to <span class="gradient-text">QuizMe</span></h1>
+          <p class="setup-subtitle">Learn programming from your own code with daily AI-generated quizzes</p>
+          <div class="setup-form">
+            <label for="apiKey">OpenRouter API Key</label>
+            <input
+              id="apiKey"
+              type="password"
+              v-model="apiKeyInput"
+              placeholder="sk-or-v1-..."
+              @keyup.enter="saveApiKey"
+            />
+            <p class="setup-hint">
+              Get a free key at <a href="https://openrouter.ai/keys" target="_blank">openrouter.ai/keys</a>
+            </p>
+            <button class="btn-primary" @click="saveApiKey" :disabled="!apiKeyInput.trim()">
+              Start Learning →
+            </button>
+          </div>
+          <div class="setup-features">
+            <div class="feature"><span>📂</span> Scan your projects</div>
+            <div class="feature"><span>🧠</span> AI-generated quizzes</div>
+            <div class="feature"><span>🔁</span> Spaced repetition</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- DASHBOARD VIEW -->
+      <div v-if="view === 'dashboard'" class="view-dashboard">
+        <header class="dash-header">
+          <h1>Good {{timeOfDay}}, dev! 👋</h1>
+          <p v-if="status.questionBank === 0">Scan a project and generate your first quiz to get started.</p>
+          <p v-else>You have {{status.questionBank}} questions in your bank. Ready for today's session?</p>
+        </header>
+
+        <!-- Stats cards -->
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-value">{{status.streak || 0}}</div>
+            <div class="stat-label">🔥 Day Streak</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value">{{status.avgAccuracy || 0}}%</div>
+            <div class="stat-label">🎯 Accuracy</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value">{{status.totalSessions || 0}}</div>
+            <div class="stat-label">📝 Sessions</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value">{{status.questionBank || 0}}</div>
+            <div class="stat-label">💡 Questions</div>
+          </div>
+        </div>
+
+        <!-- Daily Quiz CTA -->
+        <div class="daily-cta" v-if="status.questionBank > 0">
+          <button class="btn-daily" @click="startDailyQuiz" :disabled="quizLoading">
+            <span v-if="!quizLoading">🎯 Start Daily Quiz</span>
+            <span v-else>Loading questions...</span>
+          </button>
+          <p class="daily-note" v-if="status.todayCompleted > 0">
+            ✅ You completed {{status.todayCompleted}} session(s) today. Keep going!
+          </p>
+        </div>
+
+        <!-- Projects List -->
+        <section class="projects-section">
+          <div class="section-header">
+            <h2>Your Projects</h2>
+            <button class="btn-secondary" @click="navigate('scan')">+ Add Project</button>
+          </div>
+          <div v-if="projects.length === 0" class="empty-state">
+            <p>No projects scanned yet.</p>
+            <button class="btn-primary" @click="navigate('scan')">Scan Your First Project</button>
+          </div>
+          <div v-else class="project-grid">
+            <div class="project-card" v-for="p in projects" :key="p.id">
+              <div class="project-header">
+                <h3>{{p.name}}</h3>
+                <span class="project-files">{{p.profile.fileCount}} files</span>
+              </div>
+              <div class="project-tech">
+                <span class="tech-badge" v-for="t in p.profile.tech.slice(0, 6)" :key="t">{{t}}</span>
+              </div>
+              <div class="project-actions">
+                <button class="btn-sm" @click="generateForProject(p.id)" :disabled="generating === p.id">
+                  {{generating === p.id ? 'Generating...' : '🧠 Generate Quiz'}}
+                </button>
+                <button class="btn-sm btn-outline" @click="startProjectQuiz(p.id)">▶ Play</button>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- SCAN VIEW -->
+      <div v-if="view === 'scan'" class="view-scan">
+        <h1>Scan a Project</h1>
+        <p class="scan-desc">Point QuizMe to a project folder. We'll detect the tech stack and prepare quiz material.</p>
+
+        <div class="scan-form">
+          <label for="folderPath">Project Folder Path</label>
+          <div class="scan-input-row">
+            <input
+              id="folderPath"
+              type="text"
+              v-model="scanPath"
+              placeholder="G:\my-projects\my-app"
+              @keyup.enter="scanFolder"
+            />
+            <button class="btn-primary" @click="scanFolder" :disabled="scanning || !scanPath.trim()">
+              {{scanning ? 'Scanning...' : 'Scan'}}
+            </button>
+          </div>
+        </div>
+
+        <!-- Scan Result -->
+        <div v-if="scanResult" class="scan-result">
+          <div class="scan-success">
+            <h2>✅ {{scanResult.project.profile.projectName}}</h2>
+            <p>{{scanResult.project.profile.fileCount}} files scanned</p>
+          </div>
+
+          <div class="result-section">
+            <h3>Technologies Detected</h3>
+            <div class="tech-badges">
+              <span class="tech-badge" v-for="t in scanResult.project.profile.tech" :key="t">{{t}}</span>
+            </div>
+          </div>
+
+          <div class="result-section">
+            <h3>Top File Types</h3>
+            <div class="ext-list">
+              <div class="ext-item" v-for="e in scanResult.project.profile.topExtensions.slice(0, 8)" :key="e.ext">
+                <span class="ext-name">{{e.ext}}</span>
+                <div class="ext-bar">
+                  <div class="ext-fill" :style="{width: (e.count / scanResult.project.profile.fileCount * 100) + '%'}"></div>
+                </div>
+                <span class="ext-count">{{e.count}}</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="result-section" v-if="scanResult.project.profile.concepts.length">
+            <h3>Concepts Detected</h3>
+            <div class="tech-badges">
+              <span class="concept-badge" v-for="c in scanResult.project.profile.concepts" :key="c">{{c}}</span>
+            </div>
+          </div>
+
+          <button class="btn-primary btn-lg" @click="generateFromScan" :disabled="generating">
+            {{generating ? 'Generating Quiz...' : '🧠 Generate 10 Quiz Questions'}}
+          </button>
+
+          <div v-if="generatedCount > 0" class="gen-success">
+            ✅ {{generatedCount}} questions generated!
+            <button class="btn-primary" @click="startDailyQuiz">Start Quiz →</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- QUIZ VIEW -->
+      <div v-if="view === 'quiz'" class="view-quiz">
+        <div v-if="quizQuestions.length === 0" class="empty-state">
+          <h2>No questions due</h2>
+          <p>Generate more questions or wait for spaced repetition schedule.</p>
+          <button class="btn-primary" @click="navigate('dashboard')">← Dashboard</button>
+        </div>
+
+        <div v-else-if="quizCurrentIndex < quizQuestions.length" class="quiz-active">
+          <!-- Progress bar -->
+          <div class="quiz-progress">
+            <div class="progress-bar">
+              <div class="progress-fill" :style="{width: ((quizCurrentIndex) / quizQuestions.length * 100) + '%'}"></div>
+            </div>
+            <span class="progress-text">{{quizCurrentIndex + 1}} / {{quizQuestions.length}}</span>
+          </div>
+
+          <!-- Current question -->
+          <div class="question-card" :key="currentQ.id">
+            <div class="question-meta">
+              <span class="q-type" :class="currentQ.type">{{currentQ.type}}</span>
+              <span class="q-difficulty">
+                <span v-for="n in 5" :key="n" :class="n <= currentQ.difficulty ? 'dot-active' : 'dot-inactive'">●</span>
+              </span>
+              <span class="q-source" v-if="currentQ.file_path">📄 {{currentQ.file_path}}</span>
+            </div>
+
+            <h2 class="question-text">{{currentQ.question}}</h2>
+
+            <!-- Single choice answers -->
+            <div v-if="currentQ.type === 'single-choice' && currentQ.choices" class="choices">
+              <button
+                v-for="(choice, idx) in currentQ.choices"
+                :key="idx"
+                :class="['choice-btn', choiceClass(choice, idx)]"
+                @click="selectAnswer(choice)"
+                :disabled="answered"
+              >
+                {{choice}}
+              </button>
+            </div>
+
+            <!-- True/False -->
+            <div v-if="currentQ.type === 'true-false'" class="choices tf-choices">
+              <button :class="['choice-btn', choiceClass('true', 0)]" @click="selectAnswer('true')" :disabled="answered">True</button>
+              <button :class="['choice-btn', choiceClass('false', 1)]" @click="selectAnswer('false')" :disabled="answered">False</button>
+            </div>
+
+            <!-- Open / Find-the-bug -->
+            <div v-if="currentQ.type === 'open' || currentQ.type === 'find-the-bug'" class="open-answer">
+              <textarea
+                v-model="openAnswerText"
+                placeholder="Type your answer..."
+                :disabled="answered"
+                rows="3"
+              ></textarea>
+              <button class="btn-primary" @click="submitOpenAnswer" :disabled="answered || !openAnswerText.trim()">Submit</button>
+            </div>
+
+            <!-- Feedback after answering -->
+            <div v-if="answered" class="feedback" :class="lastCorrect ? 'correct' : 'incorrect'">
+              <div class="feedback-header">
+                <span v-if="lastCorrect">✅ Correct!</span>
+                <span v-else>❌ Incorrect</span>
+              </div>
+              <p class="feedback-answer"><strong>Answer:</strong> {{currentQ.answer}}</p>
+              <p class="feedback-explanation" v-if="currentQ.explanation">{{currentQ.explanation}}</p>
+              <button class="btn-primary" @click="nextQuestion">
+                {{quizCurrentIndex + 1 < quizQuestions.length ? 'Next Question →' : 'See Results →'}}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- RESULTS VIEW (after quiz) -->
+        <div v-else class="quiz-results">
+          <div class="results-card">
+            <div class="results-icon">{{quizScore >= quizQuestions.length * 0.7 ? '🎉' : '💪'}}</div>
+            <h1>Quiz Complete!</h1>
+            <div class="results-score">
+              <span class="score-big">{{quizScore}}</span>
+              <span class="score-sep">/</span>
+              <span class="score-total">{{quizQuestions.length}}</span>
+            </div>
+            <p class="results-pct">{{Math.round(quizScore / quizQuestions.length * 100)}}% accuracy</p>
+            <p class="results-msg" v-if="quizScore === quizQuestions.length">Perfect score! 🌟</p>
+            <p class="results-msg" v-else-if="quizScore >= quizQuestions.length * 0.7">Great job! Keep it up!</p>
+            <p class="results-msg" v-else>Keep practicing! Missed questions will come back soon.</p>
+            <div class="results-actions">
+              <button class="btn-primary" @click="navigate('dashboard')">← Dashboard</button>
+              <button class="btn-secondary" @click="startDailyQuiz">Play Again</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- STATS VIEW -->
+      <div v-if="view === 'stats'" class="view-stats">
+        <h1>Your Progress</h1>
+        <div class="stats-grid large">
+          <div class="stat-card big">
+            <div class="stat-value">{{status.streak || 0}}</div>
+            <div class="stat-label">🔥 Day Streak</div>
+          </div>
+          <div class="stat-card big">
+            <div class="stat-value">{{status.avgAccuracy || 0}}%</div>
+            <div class="stat-label">🎯 Overall Accuracy</div>
+          </div>
+          <div class="stat-card big">
+            <div class="stat-value">{{status.totalSessions || 0}}</div>
+            <div class="stat-label">📝 Total Sessions</div>
+          </div>
+          <div class="stat-card big">
+            <div class="stat-value">{{status.totalCorrect || 0}}</div>
+            <div class="stat-label">✅ Correct Answers</div>
+          </div>
+          <div class="stat-card big">
+            <div class="stat-value">{{status.totalQuestions || 0}}</div>
+            <div class="stat-label">📊 Total Answered</div>
+          </div>
+          <div class="stat-card big">
+            <div class="stat-value">{{status.questionBank || 0}}</div>
+            <div class="stat-label">💡 Question Bank</div>
+          </div>
+        </div>
+        <button class="btn-secondary" @click="navigate('dashboard')" style="margin-top:2rem">← Back</button>
+      </div>
+
+      <!-- Error toast -->
+      <div v-if="errorMsg" class="toast error" @click="errorMsg = ''">
+        ❌ {{errorMsg}}
+      </div>
+
+      <!-- Success toast -->
+      <div v-if="successMsg" class="toast success" @click="successMsg = ''">
+        ✅ {{successMsg}}
+      </div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

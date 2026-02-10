@@ -1,0 +1,36 @@
+# Dependencies
+node_modules
+.pnp
+.pnp.js
+
+# Testing
+coverage
+
+# Production
+build
+dist
+
+# Misc
+.DS_Store
+.env
+.npm
+*.log
+logs
+*.pid
+*.seed
+*.pid.lock
+
+# IDEs
+.idea
+.vscode
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Optional: if you move config/db to project root later
+quizme.db
+config.json
