@@ -195,7 +195,7 @@
 
           <div v-if="generatedCount > 0" class="gen-success">
             ✅ {{generatedCount}} questions generated!
-            <button class="btn-primary" @click="startDailyQuiz">Start Quiz →</button>
+            <button class="btn-primary" @click="startProjectQuiz(scanResult.project.id)">Start Quiz →</button>
           </div>
         </div>
       </div>

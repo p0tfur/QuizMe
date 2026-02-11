@@ -32,6 +32,9 @@ async function callLLM(systemPrompt, userPrompt) {
       ],
       temperature: 0.7,
       max_tokens: 4000,
+      // Request JSON output format — models that support it will comply,
+      // others will silently ignore this parameter
+      response_format: { type: "json_object" },
     }),
   });
 
@@ -125,15 +128,62 @@ function buildUserPrompt(profile, count, mode = "mixed") {
 }
 
 /**
+ * Sanitizes raw JSON string from LLM to handle common issues:
+ * - Strips control characters (keeps \n, \r, \t)
+ * - Removes trailing commas before ] and }
+ * - Attempts to repair truncated JSON arrays
+ * @param {string} str - Raw JSON string
+ * @returns {string} Sanitized JSON string
+ */
+function sanitizeJsonString(str) {
+  // Strip control characters except \n \r \t
+  // eslint-disable-next-line no-control-regex
+  let cleaned = str.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "");
+
+  // Remove trailing commas before } or ] (common LLM mistake)
+  cleaned = cleaned.replace(/,\s*([\]}])/g, "$1");
+
+  // Handle truncated JSON — if array was cut off mid-object, try to close it
+  const openBrackets = (cleaned.match(/\[/g) || []).length;
+  const closeBrackets = (cleaned.match(/\]/g) || []).length;
+  if (openBrackets > closeBrackets) {
+    // Try to find last complete object and close the array there
+    const lastCompleteObj = cleaned.lastIndexOf("}");
+    if (lastCompleteObj !== -1) {
+      // Check if there's incomplete content after the last }
+      const afterLast = cleaned.slice(lastCompleteObj + 1).trim();
+      if (afterLast && !afterLast.startsWith("]")) {
+        // Truncate at last complete object and close
+        cleaned = cleaned.slice(0, lastCompleteObj + 1);
+        // Remove any trailing comma
+        cleaned = cleaned.replace(/,\s*$/, "");
+        // Close unclosed brackets
+        for (let i = 0; i < openBrackets - closeBrackets; i++) {
+          cleaned += "]";
+        }
+      }
+    }
+  }
+
+  return cleaned;
+}
+
+/**
  * Parses LLM response into validated question objects
+ * Handles various malformed JSON outputs from different models
  * @param {string} raw - Raw LLM text response
  * @returns {Array} Parsed and validated questions
  */
 function parseQuestions(raw) {
+  if (!raw || !raw.trim()) {
+    console.error("Empty LLM response received");
+    return [];
+  }
+
   // Try to extract JSON from the response (handle markdown code blocks)
   let jsonStr = raw.trim();
 
-  // Strip markdown code fences if present
+  // Strip markdown code fences if present (greedy match for multiple blocks)
   const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
   if (jsonMatch) {
     jsonStr = jsonMatch[1].trim();
@@ -144,18 +194,56 @@ function parseQuestions(raw) {
   const arrayEnd = jsonStr.lastIndexOf("]");
   if (arrayStart !== -1 && arrayEnd !== -1) {
     jsonStr = jsonStr.slice(arrayStart, arrayEnd + 1);
+  } else {
+    // Some models return a single object instead of array — wrap it
+    const objStart = jsonStr.indexOf("{");
+    const objEnd = jsonStr.lastIndexOf("}");
+    if (objStart !== -1 && objEnd !== -1) {
+      jsonStr = "[" + jsonStr.slice(objStart, objEnd + 1) + "]";
+    }
   }
+
+  // Apply JSON sanitization to fix common LLM issues
+  jsonStr = sanitizeJsonString(jsonStr);
 
   let questions;
   try {
     questions = JSON.parse(jsonStr);
   } catch (e) {
     console.error("Failed to parse LLM response as JSON:", e.message);
-    console.error("Raw response:", raw.slice(0, 500));
-    return [];
+    console.error("Sanitized JSON (first 500 chars):", jsonStr.slice(0, 500));
+    console.error("Raw response (first 500 chars):", raw.slice(0, 500));
+
+    // Last resort: try to extract individual JSON objects with regex
+    try {
+      const objectMatches = raw.match(/\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g);
+      if (objectMatches && objectMatches.length > 0) {
+        questions = objectMatches
+          .map((m) => {
+            try {
+              return JSON.parse(sanitizeJsonString(m));
+            } catch {
+              return null;
+            }
+          })
+          .filter(Boolean);
+        console.log(`  Recovered ${questions.length} questions via regex extraction.`);
+      } else {
+        return [];
+      }
+    } catch {
+      return [];
+    }
   }
 
-  if (!Array.isArray(questions)) return [];
+  if (!Array.isArray(questions)) {
+    // Wrap single object in array
+    if (questions && typeof questions === "object") {
+      questions = [questions];
+    } else {
+      return [];
+    }
+  }
 
   // Validate and clean each question
   const validTypes = new Set(["single-choice", "true-false", "open", "find-the-bug"]);
