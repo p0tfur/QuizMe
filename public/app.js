@@ -209,6 +209,19 @@ const app = createApp({
       }
     }
 
+    // --- Delete Project ---
+
+    async function deleteProject(projectId) {
+      if (!confirm("Are you sure you want to delete this project? All questions and progress will be lost.")) return;
+      try {
+        await api(`/api/projects/${projectId}`, { method: "DELETE" });
+        showSuccess("Project deleted.");
+        await refreshStatus();
+      } catch {
+        // Error already shown
+      }
+    }
+
     // --- Quiz: Daily session ---
 
     async function startDailyQuiz() {
@@ -389,7 +402,7 @@ const app = createApp({
       apiKeyInput, saveApiKey,
       // Scan
       scanPath, scanning, scanResult, generating, generatedCount,
-      scanFolder, generateFromScan,
+      scanFolder, generateFromScan, deleteProject,
       // Dashboard
       timeOfDay, navigate, generateForProject,
       // Quiz

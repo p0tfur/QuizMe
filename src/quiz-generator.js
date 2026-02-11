@@ -140,6 +140,10 @@ function sanitizeJsonString(str) {
   // eslint-disable-next-line no-control-regex
   let cleaned = str.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "");
 
+  // Strip prefixes like "js", "json", "javascript" if they appear at start (without backticks)
+  // e.g. "js\n[...]" -> "[...]"
+  cleaned = cleaned.replace(/^(js|json|javascript)(\s+)/i, "");
+
   // Remove trailing commas before } or ] (common LLM mistake)
   cleaned = cleaned.replace(/,\s*([\]}])/g, "$1");
 

@@ -6,7 +6,7 @@ import { fileURLToPath } from "url";
 import { loadConfig, saveConfig, hasApiKey } from "./config.js";
 import { scanProject } from "./scanner.js";
 import {
-  upsertProject, getProjects, getProjectById,
+  upsertProject, getProjects, getProjectById, deleteProject,
   insertQuestions, getDueQuestions, getQuestionsByProject,
   updateReview, createSession, completeSession, getStats,
 } from "./database.js";
@@ -58,6 +58,20 @@ export function createApp() {
       profile: JSON.parse(p.profile),
     }));
     res.json(projects);
+  });
+
+  // DELETE /api/projects/:id — delete a project
+  app.delete("/api/projects/:id", (req, res) => {
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) {
+      return res.status(400).json({ error: "Invalid project ID" });
+    }
+    const success = deleteProject(id);
+    if (success) {
+      res.json({ success: true });
+    } else {
+      res.status(404).json({ error: "Project not found" });
+    }
   });
 
   // POST /api/scan — scan a project folder

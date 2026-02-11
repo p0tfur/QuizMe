@@ -111,6 +111,16 @@ export function getProjectById(id) {
   return getDb().prepare("SELECT * FROM projects WHERE id = ?").get(id);
 }
 
+/**
+ * Deletes a project by id
+ * @param {number} id
+ * @returns {boolean} True if deleted
+ */
+export function deleteProject(id) {
+  const result = getDb().prepare("DELETE FROM projects WHERE id = ?").run(id);
+  return result.changes > 0;
+}
+
 // =====================
 // Questions CRUD
 // =====================
