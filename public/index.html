@@ -230,6 +230,11 @@
 
             <h2 class="question-text">{{currentQ.question}}</h2>
 
+            <!-- Code snippet for find-the-bug questions -->
+            <div v-if="currentQ.code_snippet" class="code-snippet">
+              <pre><code>{{currentQ.code_snippet}}</code></pre>
+            </div>
+
             <!-- Single choice answers -->
             <div v-if="currentQ.type === 'single-choice' && currentQ.choices" class="choices">
               <button

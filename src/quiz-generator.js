@@ -52,33 +52,26 @@ async function callLLM(systemPrompt, userPrompt) {
  * @returns {string}
  */
 function getSystemPrompt() {
-  return `You are a programming quiz generator. Your job is to create educational quiz questions that help developers learn and reinforce programming concepts.
+  return `You are a programming quiz generator. Create educational quiz questions as a JSON array.
 
 RULES:
-- Generate questions in the language matching the project's primary language (if code is in Polish context, questions can be in Polish or English — prefer English for technical accuracy)
 - Each question must be self-contained and clearly worded
-- For single-choice questions, provide exactly 4 choices labeled A, B, C, D
-- For true-false questions, the answer must be exactly "true" or "false"
-- For open questions, provide a concise expected answer
-- For find-the-bug questions, include a code snippet with a subtle but real bug
-- Always include a brief explanation of the correct answer
-- Questions should range from beginner (difficulty 1) to advanced (difficulty 5)
+- For single-choice: provide exactly 4 choices labeled A, B, C, D
+- For true-false: answer must be exactly "true" or "false"
+- For open: provide a concise expected answer
+- For find-the-bug: MUST include a "code_snippet" field with the buggy code. The "question" describes what to look for, "code_snippet" holds the actual code.
+- Always include explanation
+- Difficulty ranges from 1 (beginner) to 5 (advanced)
 
-OUTPUT FORMAT — respond ONLY with a valid JSON array, no markdown, no extra text:
+Respond ONLY with a valid JSON array:
 [
-  {
-    "type": "single-choice",
-    "difficulty": 3,
-    "source": "project",
-    "question": "What does this function do?",
-    "choices": ["A) Option 1", "B) Option 2", "C) Option 3", "D) Option 4"],
-    "answer": "B",
-    "explanation": "Because...",
-    "file_path": "src/utils.js"
-  }
+  {"type":"single-choice","difficulty":3,"source":"project","question":"...","choices":["A) ...","B) ...","C) ...","D) ..."],"answer":"B","explanation":"...","file_path":"src/file.js"},
+  {"type":"find-the-bug","difficulty":4,"source":"project","question":"Find the bug.","code_snippet":"function x() {\\n  // buggy code\\n}","answer":"The bug is...","explanation":"...","file_path":"src/file.js"},
+  {"type":"true-false","difficulty":2,"source":"general","question":"...","answer":"true","explanation":"..."},
+  {"type":"open","difficulty":3,"source":"general","question":"...","answer":"...","explanation":"..."}
 ]
 
-Question types to use: "single-choice", "true-false", "open", "find-the-bug"`;
+Types: "single-choice", "true-false", "open", "find-the-bug"`;
 }
 
 /**
@@ -193,17 +186,26 @@ function parseQuestions(raw) {
     jsonStr = jsonMatch[1].trim();
   }
 
-  // Find the JSON array in the response
-  const arrayStart = jsonStr.indexOf("[");
-  const arrayEnd = jsonStr.lastIndexOf("]");
-  if (arrayStart !== -1 && arrayEnd !== -1) {
-    jsonStr = jsonStr.slice(arrayStart, arrayEnd + 1);
-  } else {
-    // Some models return a single object instead of array — wrap it
+  // Detect if response starts with { (single object or concatenated objects)
+  // Must check BEFORE looking for [ to avoid matching [ inside choices/arrays
+  const firstChar = jsonStr.trimStart().charAt(0);
+  if (firstChar === "{") {
+    // Could be one object or multiple objects concatenated: {...}{...}
+    // Wrap in array brackets
     const objStart = jsonStr.indexOf("{");
     const objEnd = jsonStr.lastIndexOf("}");
     if (objStart !== -1 && objEnd !== -1) {
-      jsonStr = "[" + jsonStr.slice(objStart, objEnd + 1) + "]";
+      let inner = jsonStr.slice(objStart, objEnd + 1);
+      // Split concatenated objects: }{ or }, { → },{
+      inner = inner.replace(/\}\s*,?\s*\{/g, "},{");
+      jsonStr = "[" + inner + "]";
+    }
+  } else {
+    // Find the JSON array in the response
+    const arrayStart = jsonStr.indexOf("[");
+    const arrayEnd = jsonStr.lastIndexOf("]");
+    if (arrayStart !== -1 && arrayEnd !== -1) {
+      jsonStr = jsonStr.slice(arrayStart, arrayEnd + 1);
     }
   }
 
@@ -268,6 +270,7 @@ function parseQuestions(raw) {
       answer: String(q.answer),
       explanation: q.explanation || "",
       file_path: q.file_path || null,
+      code_snippet: q.code_snippet || null,
     }));
 }
 
@@ -285,6 +288,8 @@ export async function generateQuestions(profile, count = 10, mode = "mixed") {
   console.log(`  Generating ${count} questions via OpenRouter (mode: ${mode})...`);
 
   const raw = await callLLM(systemPrompt, userPrompt);
+  // Debug: log raw LLM response to help diagnose parsing failures
+  console.log(`  [DEBUG] Raw LLM response (first 500 chars): ${raw.slice(0, 500)}`);
   const questions = parseQuestions(raw);
 
   console.log(`  Parsed ${questions.length} valid questions from LLM response.`);

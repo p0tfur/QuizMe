@@ -46,6 +46,7 @@ const SCHEMA = `
     answer      TEXT NOT NULL,
     explanation TEXT,
     file_path   TEXT,                     -- optional: source file reference
+    code_snippet TEXT,                    -- optional: code block for find-the-bug questions
     created_at  TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
@@ -134,8 +135,8 @@ export function deleteProject(id) {
 export function insertQuestions(projectId, questions) {
   const db = getDb();
   const insertQ = db.prepare(`
-    INSERT INTO questions (project_id, type, difficulty, source, question, choices, answer, explanation, file_path)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO questions (project_id, type, difficulty, source, question, choices, answer, explanation, file_path, code_snippet)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const insertR = db.prepare(`
     INSERT INTO reviews (question_id) VALUES (?)
@@ -153,7 +154,8 @@ export function insertQuestions(projectId, questions) {
         q.choices ? JSON.stringify(q.choices) : null,
         q.answer,
         q.explanation || null,
-        q.file_path || null
+        q.file_path || null,
+        q.code_snippet || null
       );
       // Create a review entry for spaced repetition tracking
       insertR.run(result.lastInsertRowid);

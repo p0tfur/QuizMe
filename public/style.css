@@ -737,6 +737,30 @@ label {
   white-space: pre-wrap;
 }
 
+/* --- Code Snippet (find-the-bug questions) --- */
+.code-snippet {
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-sm);
+  padding: 1.25rem;
+  margin-bottom: 1.5rem;
+  overflow-x: auto;
+}
+
+.code-snippet pre {
+  margin: 0;
+}
+
+.code-snippet code {
+  font-family: var(--font-mono);
+  font-size: 0.88rem;
+  line-height: 1.6;
+  color: var(--text-primary);
+  white-space: pre;
+  tab-size: 2;
+}
+
 /* --- Choices --- */
 .choices {
   display: flex;
