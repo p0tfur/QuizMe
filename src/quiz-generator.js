@@ -25,7 +25,7 @@ async function callLLM(systemPrompt, userPrompt) {
       "X-Title": "QuizMe",
     },
     body: JSON.stringify({
-      model: "openrouter/auto",
+      model: "openrouter/free",
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
